@@ -1,4 +1,4 @@
-# Kafka and usnig etcd for leader election and state management
+# etcd for leader election and state management
 
 You can use etcd as a sidecar to achieve fault tolerance and state management for your Kafka consumer application. etcd is a distributed key-value store that provides strong consistency and is often used for service discovery, configuration management, and leader election in distributed systems.
 
