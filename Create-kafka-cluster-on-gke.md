@@ -287,8 +287,10 @@ To access Kafka from outside the cluster, you can expose it using a LoadBalancer
 apiVersion: v1
 kind: Service
 metadata:
-  name: kafka-external
+  name: kafka-internal
   namespace: kafka
+  annotations:
+    cloud.google.com/load-balancer-type: "Internal"
 spec:
   type: LoadBalancer
   ports:
