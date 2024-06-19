@@ -31,6 +31,24 @@ kubectl apply -f kafka-namespace.yaml
 Kafka depends on Zookeeper. Deploy Zookeeper first:
 
 ```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: zookeeper-config
+  namespace: kafka
+data:
+  zoo.cfg: |
+    tickTime=2000
+    initLimit=10
+    syncLimit=5
+    dataDir=/var/lib/zookeeper
+    clientPort=2181
+    maxClientCnxns=60
+    autopurge.snapRetainCount=3
+    autopurge.purgeInterval=1
+```
+
+```yaml
 # zookeeper.yaml
 apiVersion: apps/v1
 kind: StatefulSet
