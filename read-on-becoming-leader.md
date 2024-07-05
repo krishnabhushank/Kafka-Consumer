@@ -61,3 +61,70 @@ public class KafkaConsumerService {
 Make sure to configure your Kafka listener container factory and other necessary beans in your Spring configuration file.
 
 This example assumes that you have a basic understanding of Spring Kafka and its configuration. You may need to adapt this example to fit your specific use case and application setup.
+
+---
+
+Yes, using the `MessageListenerContainer` to pause will pause consumption for all assigned partitions to that consumer. If you need to pause only specific partitions, you would have to manage this more granularly. Here's how you can handle partition-specific pausing:
+
+1. **Pause Specific Partitions**: Use the `Consumer` object directly to pause specific partitions.
+2. **Partition Listener**: Implement a `ConsumerAwareListener` to get access to the `Consumer` object.
+
+Here is an updated version using partition-specific pausing:
+
+```java
+import org.apache.kafka.clients.consumer.Consumer;
+import org.apache.kafka.common.TopicPartition;
+import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.kafka.listener.ConsumerAwareListenerErrorHandler;
+import org.springframework.kafka.listener.ConsumerAwareMessageListener;
+import org.springframework.kafka.listener.MessageListenerContainer;
+import org.springframework.kafka.listener.config.ContainerProperties;
+import org.springframework.kafka.listener.config.ContainerProperties.AckMode;
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
+
+import java.util.Collection;
+
+@Service
+public class KafkaConsumerService implements ConsumerAwareMessageListener<String, String> {
+
+    @Autowired
+    private KafkaTemplate<String, String> kafkaTemplate;
+    
+    private RestTemplate restTemplate = new RestTemplate();
+
+    @Override
+    @KafkaListener(topics = "your_topic", containerFactory = "kafkaListenerContainerFactory")
+    public void onMessage(String message, Consumer<?, ?> consumer) {
+        boolean shouldConsume = checkApi();
+        if (!shouldConsume) {
+            // Pause all assigned partitions
+            Collection<TopicPartition> partitions = consumer.assignment();
+            consumer.pause(partitions);
+            return;
+        }
+
+        // Process the message
+        System.out.println("Consumed message: " + message);
+
+        // Resume all paused partitions
+        if (!consumer.paused().isEmpty()) {
+            consumer.resume(consumer.paused());
+        }
+    }
+
+    private boolean checkApi() {
+        String apiUrl = "http://your-api-endpoint";
+        Boolean response = restTemplate.getForObject(apiUrl, Boolean.class);
+        return response != null && response;
+    }
+}
+```
+
+### Explanation:
+1. **ConsumerAwareMessageListener**: Implements `ConsumerAwareMessageListener` to get access to the `Consumer` object directly.
+2. **Pause Specific Partitions**: Calls `consumer.pause(partitions)` to pause all assigned partitions if the API returns false.
+3. **Resume Specific Partitions**: Calls `consumer.resume(consumer.paused())` to resume all previously paused partitions.
+
+This allows you to manage partition-specific pausing and resuming based on the API response. Make sure to adapt this example to fit your specific use case and configuration.
