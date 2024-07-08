@@ -194,30 +194,63 @@ Create a Kafka listener to consume messages and save them to the database:
 ```java
 // Path: src/main/java/com/example/kafkaconsumer/service/FinancialDataListener.java
 
-package com.example.kafkaconsumer.service;
-
-import com.example.kafkaconsumer.model.FinancialData;
-import com.example.kafkaconsumer.repository.FinancialDataRepository;
+import org.apache.kafka.clients.consumer.Consumer;
+import org.apache.kafka.common.TopicPartition;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.kafka.config.KafkaListenerEndpointRegistry;
+import org.springframework.kafka.listener.MessageListenerContainer;
+import org.springframework.kafka.listener.config.ContainerProperties;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
+
+import java.util.Collection;
 
 @Service
-public class FinancialDataListener {
-
-    private final FinancialDataRepository repository;
+public class KafkaConsumerService {
 
     @Autowired
-    public FinancialDataListener(FinancialDataRepository repository) {
-        this.repository = repository;
+    private KafkaListenerEndpointRegistry kafkaListenerEndpointRegistry;
+
+    private final RestTemplate restTemplate = new RestTemplate();
+
+    @KafkaListener(groupId = "your_group_id", topics = "your_topic", containerFactory = "kafkaListenerContainerFactory")
+    public void consume(String message) {
+        boolean shouldConsume = checkApi();
+        MessageListenerContainer listenerContainer = getListenerContainerByGroupId("your_group_id");
+
+        if (listenerContainer != null) {
+            if (!shouldConsume) {
+                listenerContainer.pause();
+                System.out.println("Consumption paused for container: " + listenerContainer);
+                return;
+            }
+
+            // Process the message
+            System.out.println("Consumed message: " + message);
+
+            // Resume consumption if it was previously paused
+            listenerContainer.resume();
+            System.out.println("Consumption resumed for container: " + listenerContainer);
+        }
     }
 
-    @KafkaListener(topics = "financial_data", groupId = "group_id")
-    public void listen(String message, String key) {
-        FinancialData data = new FinancialData(key, message);
-        repository.save(data);
+    private boolean checkApi() {
+        String apiUrl = "http://your-api-endpoint";
+        Boolean response = restTemplate.getForObject(apiUrl, Boolean.class);
+        return response != null && response;
+    }
+
+    private MessageListenerContainer getListenerContainerByGroupId(String groupId) {
+        for (MessageListenerContainer container : kafkaListenerEndpointRegistry.getListenerContainers()) {
+            if (container.getContainerProperties().getGroupId().equals(groupId)) {
+                return container;
+            }
+        }
+        return null;
     }
 }
+
 ```
 
 ### Main Application
