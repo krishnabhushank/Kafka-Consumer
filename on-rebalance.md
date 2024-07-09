@@ -1,15 +1,8 @@
-Yes, you can check for partition assignments and revocations in Spring Kafka by implementing a custom `ConsumerRebalanceListener`. This allows you to perform specific actions when partitions are assigned or revoked, such as checking an API or managing offsets.
+To achieve the desired behavior—where partitions are not revoked if the API check returns true, and partitions are not assigned if the API check returns false—you can modify the custom rebalance listener to handle these conditions.
 
-### Implementing a Custom ConsumerRebalanceListener
+### Updated Custom Rebalance Listener
 
-1. **Create a Custom Rebalance Listener**: Implement the `ConsumerRebalanceListener` interface.
-2. **Register the Listener**: Register the custom rebalance listener in the Kafka listener container.
-
-### Step-by-Step Implementation
-
-#### Custom Rebalance Listener
-
-Create a class that implements the `ConsumerRebalanceListener` interface.
+Here's how you can modify the `CustomRebalanceListener` to include these checks:
 
 ```java
 import org.apache.kafka.clients.consumer.Consumer;
@@ -22,11 +15,23 @@ import java.util.Collection;
 public class CustomRebalanceListener implements ConsumerRebalanceListener {
 
     private final RestTemplate restTemplate = new RestTemplate();
+    private final Consumer<?, ?> consumer;
+
+    public CustomRebalanceListener(Consumer<?, ?> consumer) {
+        this.consumer = consumer;
+    }
 
     @Override
     public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
         System.out.println("Partitions revoked: " + partitions);
         // Perform any necessary actions when partitions are revoked
+        if (checkApi()) {
+            System.out.println("API check returned true, preventing revocation.");
+            consumer.assign(partitions);
+        } else {
+            System.out.println("API check returned false, allowing revocation.");
+            // Proceed with the revocation
+        }
     }
 
     @Override
@@ -34,12 +39,11 @@ public class CustomRebalanceListener implements ConsumerRebalanceListener {
         System.out.println("Partitions assigned: " + partitions);
         // Perform any necessary actions when partitions are assigned
         if (!checkApi()) {
-            // Unassign partitions if API check fails
-            Consumer<?, ?> consumer = ...; // Obtain the consumer instance
-            consumer.unsubscribe();
-            consumer.assign(partitions);
+            System.out.println("API check returned false, preventing assignment.");
             consumer.pause(partitions);
-            System.out.println("Unassigned and paused all partitions: " + partitions);
+            consumer.unsubscribe();
+        } else {
+            System.out.println("API check returned true, allowing assignment.");
         }
     }
 
@@ -51,13 +55,12 @@ public class CustomRebalanceListener implements ConsumerRebalanceListener {
 }
 ```
 
-#### Kafka Configuration Class
+### Kafka Configuration Class
 
-Register the custom rebalance listener in your Kafka configuration.
+Modify the Kafka configuration class to pass the consumer instance to the custom rebalance listener.
 
 ```java
 import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -66,7 +69,6 @@ import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
 import org.springframework.kafka.listener.config.ContainerProperties;
-import org.springframework.kafka.listener.ConsumerAwareListenerErrorHandler;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -102,9 +104,7 @@ public class KafkaConsumerConfig {
         ConcurrentKafkaListenerContainerFactory<String, String> factory =
                 new ConcurrentKafkaListenerContainerFactory<>();
         factory.setConsumerFactory(consumerFactory());
-
-        // Set the custom rebalance listener
-        factory.getContainerProperties().setConsumerRebalanceListener(new CustomRebalanceListener());
+        factory.getContainerProperties().setConsumerRebalanceListener(new CustomRebalanceListener(factory.getContainerProperties().getConsumer()));
 
         factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL_IMMEDIATE);
         return factory;
@@ -112,16 +112,13 @@ public class KafkaConsumerConfig {
 }
 ```
 
-#### Explanation:
+### Explanation:
 
-1. **CustomRebalanceListener**: Implements the `ConsumerRebalanceListener` interface and overrides `onPartitionsRevoked` and `onPartitionsAssigned` methods.
-   - `onPartitionsRevoked`: Called when partitions are revoked from the consumer.
-   - `onPartitionsAssigned`: Called when partitions are assigned to the consumer.
-   - `checkApi`: Checks an external API to determine whether the partitions should remain assigned.
-2. **Kafka Configuration**: In the Kafka configuration class, register the custom rebalance listener using `setConsumerRebalanceListener`.
+1. **CustomRebalanceListener**: 
+   - In the `onPartitionsRevoked` method, if the API check returns true, reassign the partitions to prevent revocation.
+   - In the `onPartitionsAssigned` method, if the API check returns false, pause the consumer and unsubscribe from the partitions to prevent assignment.
 
-### Using the Listener in the Service
+2. **Kafka Configuration**:
+   - Ensure the `CustomRebalanceListener` has access to the consumer instance. This example assumes you can get the consumer from the container properties. If not, you might need to adapt the approach to pass the consumer instance correctly.
 
-In your Kafka consumer service, you don't need to change the `onMessage` method. The custom rebalance listener will handle partition assignment and revocation logic.
-
-This approach ensures that you can perform specific actions whenever partitions are assigned or revoked, such as checking an API or managing consumer state.
+By implementing these modifications, you can control the partition assignment and revocation based on the API check results.
