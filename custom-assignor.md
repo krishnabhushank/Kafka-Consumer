@@ -30,16 +30,20 @@ public class CustomPartitionAssignor extends ConsumerPartitionAssignor {
     }
 
     @Override
-    public List<TopicPartition> assign(Cluster metadata, Map<String, Integer> partitionsPerTopic, Map<String, Subscription> subscriptions) {
+    public GroupAssignment assign(Cluster metadata, GroupSubscription groupSubscription) {
         logger.info("Starting partition assignment.");
+        Map<String, List<TopicPartition>> assignments = new HashMap<>();
+        
         if (shouldStopRebalance()) {
             logger.info("Stopping rebalance as the API returned true.");
-            return getCurrentAssignment(subscriptions.keySet());
+            assignments = getCurrentAssignment(groupSubscription.groupIds());
+        } else {
+            assignments = super.assign(metadata, groupSubscription).groupAssignments();
+            updateCurrentAssignment(groupSubscription.groupIds(), assignments);
+            logger.info("New partition assignment completed: {}", assignments);
         }
-        List<TopicPartition> assignment = super.assign(metadata, partitionsPerTopic, subscriptions);
-        updateCurrentAssignment(subscriptions.keySet(), assignment);
-        logger.info("New partition assignment completed: {}", assignment);
-        return assignment;
+
+        return new GroupAssignment(assignments);
     }
 
     private boolean shouldStopRebalance() {
@@ -48,19 +52,26 @@ public class CustomPartitionAssignor extends ConsumerPartitionAssignor {
         return result;
     }
 
-    private List<TopicPartition> getCurrentAssignment(Set<String> memberIds) {
-        List<TopicPartition> assignment = currentAssignment.get(memberIds.iterator().next());
-        if (assignment == null) {
-            logger.warn("No current assignment found. Returning an empty list.");
-            return List.of();
+    private Map<String, List<TopicPartition>> getCurrentAssignment(Set<String> memberIds) {
+        Map<String, List<TopicPartition>> assignments = new HashMap<>();
+        for (String memberId : memberIds) {
+            List<TopicPartition> assignment = currentAssignment.get(memberId);
+            if (assignment == null) {
+                logger.warn("No current assignment found for member {}. Returning an empty list.", memberId);
+                assignments.put(memberId, List.of());
+            } else {
+                assignments.put(memberId, assignment);
+            }
         }
-        logger.info("Returning current assignment: {}", assignment);
-        return assignment;
+        logger.info("Returning current assignment: {}", assignments);
+        return assignments;
     }
 
-    private void updateCurrentAssignment(Set<String> memberIds, List<TopicPartition> assignment) {
+    private void updateCurrentAssignment(Set<String> memberIds, Map<String, List<TopicPartition>> assignments) {
         logger.info("Updating current assignment for members: {}", memberIds);
-        currentAssignment.put(memberIds.iterator().next(), assignment);
+        for (String memberId : memberIds) {
+            currentAssignment.put(memberId, assignments.get(memberId));
+        }
     }
 
     private boolean callApiToCheckIfStopRebalance() {
