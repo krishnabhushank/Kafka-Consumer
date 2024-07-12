@@ -5,9 +5,8 @@ Certainly! Adding logging can help monitor the behavior of the custom partition 
 **CustomPartitionAssignor.java**
 
 ```java
-import org.apache.kafka.clients.consumer.ConsumerPartitionAssignor;
+import org.apache.kafka.clients.consumer.internals.AbstractPartitionAssignor;
 import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.Cluster;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -19,7 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-public class CustomPartitionAssignor extends ConsumerPartitionAssignor {
+public class CustomPartitionAssignor extends AbstractPartitionAssignor {
 
     private static final Logger logger = LoggerFactory.getLogger(CustomPartitionAssignor.class);
     private Map<String, List<TopicPartition>> currentAssignment = new HashMap<>();
@@ -30,20 +29,20 @@ public class CustomPartitionAssignor extends ConsumerPartitionAssignor {
     }
 
     @Override
-    public GroupAssignment assign(Cluster metadata, GroupSubscription groupSubscription) {
+    public Map<String, List<TopicPartition>> assign(Map<String, Integer> partitionsPerTopic, Map<String, Subscription> subscriptions) {
         logger.info("Starting partition assignment.");
         Map<String, List<TopicPartition>> assignments = new HashMap<>();
-        
+
         if (shouldStopRebalance()) {
             logger.info("Stopping rebalance as the API returned true.");
-            assignments = getCurrentAssignment(groupSubscription.groupIds());
+            assignments = getCurrentAssignment(subscriptions.keySet());
         } else {
-            assignments = super.assign(metadata, groupSubscription).groupAssignments();
-            updateCurrentAssignment(groupSubscription.groupIds(), assignments);
+            assignments = super.assign(partitionsPerTopic, subscriptions);
+            updateCurrentAssignment(subscriptions.keySet(), assignments);
             logger.info("New partition assignment completed: {}", assignments);
         }
 
-        return new GroupAssignment(assignments);
+        return assignments;
     }
 
     private boolean shouldStopRebalance() {
